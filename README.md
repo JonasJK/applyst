@@ -1,32 +1,21 @@
-# SolidStart
+# Applyst
 
-Everything you need to build a Solid project, powered by [`solid-start`](https://start.solidjs.com);
+A small web app for assembling Typst-powered cover letters from reusable snippets (but I guess you could use it for things that aren't cover letters).
+Drag snippets into the editor, fill variables, click "Apply" to bake values into saved snippets, and get a live PDF preview, all fully in your browser; no login, no server.
 
-## Creating a project
+## Features
+- Drag & drop snippet library
+- Variable inputs with per-variable "Apply" (bakes into snippet)
+- Live PDF preview rendered by Typst
+- Undo/redo history + snapshots
+- LocalStorage persistence
+
+## Stack
+Solid.js, Typst (renderer + WASM compiler), UnoCSS, Vite
+
+## Run locally
 
 ```bash
-# create a new project in the current directory
-npm init solid@latest
-
-# create a new project in my-app
-npm init solid@latest my-app
+pnpm install
+pnpm dev
 ```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```bash
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-Solid apps are built with _presets_, which optimise your project for deployment to different environments.
-
-By default, `npm run build` will generate a Node app that you can run with `npm start`. To use a different preset, add it to the `devDependencies` in `package.json` and specify in your `app.config.js`.
-
-## This project was created with the [Solid CLI](https://github.com/solidjs-community/solid-cli)

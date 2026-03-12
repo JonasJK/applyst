@@ -3,7 +3,16 @@ import presetWind4 from "@unocss/preset-wind4";
 import presetIcons from "@unocss/preset-icons";
 
 export default defineConfig({
-  presets: [presetWind4(), presetIcons()],
+  presets: [
+    presetWind4(),
+    presetIcons({
+      scale: 1,
+      extraProperties: {
+        display: "inline-block",
+        "vertical-align": "middle",
+      },
+    }),
+  ],
   theme: {
     colors: {
       base: "#0f172a",

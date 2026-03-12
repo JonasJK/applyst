@@ -20,6 +20,7 @@ type SnippetNode = {
   title: string;
   template: string;
   vars: Record<string, string>;
+  blockId?: string;
 };
 
 type EditorNode = TextNode | SnippetNode;
@@ -56,6 +57,7 @@ function blockToNode(b: Block): SnippetNode {
     title: b.title,
     template: b.content,
     vars: Object.fromEntries(varNames.map((n) => [n, ""])),
+    blockId: b.id,
   };
 }
 
@@ -207,7 +209,24 @@ export default function Home() {
 
   function updateBlock(id: string, patch: Partial<Block>) {
     const idx = blocks.findIndex((x) => x.id === id);
-    if (idx >= 0) setBlocks(idx, patch);
+    if (idx < 0) return;
+    // determine new content (if any) so we can sync nodes referencing this block
+    const newContent = patch.content ?? blocks[idx].content;
+    setBlocks(idx, patch);
+    // sync any nodes that reference this block: update template and preserve existing var values
+    const varNames = parseVarNames(newContent);
+    setNodes(
+      produce((s) => {
+        for (let i = 0; i < s.length; i++) {
+          const n = s[i];
+          if (n.type === "snippet" && n.blockId === id) {
+            const existing = n.vars || {};
+            n.template = newContent;
+            n.vars = Object.fromEntries(varNames.map((vn) => [vn, existing[vn] ?? ""]));
+          }
+        }
+      }),
+    );
     pushSnapshotDebounced();
   }
 
@@ -249,6 +268,54 @@ export default function Home() {
         }),
       );
     pushSnapshotDebounced();
+  }
+
+  // Bake a single variable value into the snippet template
+  function applyVar(nodeId: string, varName: string) {
+    const idx = nodes.findIndex((n) => n.id === nodeId);
+    if (idx < 0) return;
+    const n = nodes[idx];
+    if (n.type !== "snippet") return;
+    const val = n.vars[varName] ?? "";
+    // If this node came from a saved block, update the block so all nodes sync
+    if (n.blockId) {
+      const bidx = blocks.findIndex((b) => b.id === n.blockId);
+      if (bidx >= 0) {
+        const block = blocks[bidx];
+        const newContent = block.content.replaceAll(`{{${varName}}}`, val);
+        // update block content
+        setBlocks(bidx, { content: newContent });
+        // sync nodes referencing this block
+        const varNames = parseVarNames(newContent);
+        setNodes(
+          produce((s) => {
+            for (const element of s) {
+              const nn = element;
+              if (nn.type === "snippet" && nn.blockId === n.blockId) {
+                const existing = nn.vars || {};
+                nn.template = newContent;
+                nn.vars = Object.fromEntries(varNames.map((vn) => [vn, existing[vn] ?? ""]));
+              }
+            }
+          }),
+        );
+        pushSnapshotImmediate();
+        return;
+      }
+    }
+
+    // fallback: bake into this node only
+    const newTemplate = n.template.replaceAll(`{{${varName}}}`, val);
+    setNodes(
+      produce((s) => {
+        const nn = s[idx];
+        if (nn.type === "snippet") {
+          nn.template = newTemplate;
+          delete nn.vars[varName];
+        }
+      }),
+    );
+    pushSnapshotImmediate();
   }
 
   function removeNode(id: string) {
@@ -629,6 +696,13 @@ export default function Home() {
                                   placeholder={`Enter ${varName}…`}
                                   class="flex-1 px-1.5 py-1 border border-[#1e293b] rounded bg-[#0f172a] text-[#e2e8f0] text-[12px] outline-none"
                                 />
+                                <button
+                                  onClick={() => applyVar(node.id, varName)}
+                                  class="ml-2 px-2 py-1 rounded bg-transparent text-[#34d399] border border-[#34d39933] hover:bg-[#34d39910] text-[12px]"
+                                  title={`Apply ${varName} to snippet template`}
+                                >
+                                  <i class="i-mdi:check text-[14px]" aria-hidden="true" />
+                                </button>
                               </div>
                             )}
                           </For>
