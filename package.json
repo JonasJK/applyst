@@ -10,6 +10,7 @@
     "@myriaddreamin/typst-ts-renderer": "0.7.0-rc2",
     "@myriaddreamin/typst-ts-web-compiler": "0.7.0-rc2",
     "@myriaddreamin/typst.ts": "0.7.0-rc2",
+    "@unocss/preset-icons": "^66.6.6",
     "@unocss/preset-wind4": "^66.6.6",
     "@unocss/reset": "^66.6.6",
     "solid-js": "^1.9.11",
@@ -18,7 +19,8 @@
     "vite": "^7.3.1"
   },
   "devDependencies": {
-    "vite-plugin-solid": "^2.11.6"
+    "@iconify-json/mdi": "^1.2.3",
+    "vite-plugin-solid": "^2.11.10"
   },
   "engines": {
     "node": ">=24"

@@ -72,6 +72,52 @@ export default function Home() {
   const [dropIndex, setDropIndex] = createSignal<number | null>(null);
   const [draggingNodeId, setDraggingNodeId] = createSignal("");
 
+  // ── Simple undo/redo history ─────────────────────────────────────────────
+  const MAX_HISTORY = 200;
+  const [history, setHistory] = createSignal<Array<{ blocks: Block[]; nodes: EditorNode[]; sizes: any }>>([]);
+  const [historyIndex, setHistoryIndex] = createSignal(-1);
+  let historyDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function snapshotState() {
+    return {
+      blocks: JSON.parse(JSON.stringify(blocks)) as Block[],
+      nodes: JSON.parse(JSON.stringify(nodes)) as EditorNode[],
+      sizes: structuredClone(sizes()),
+    };
+  }
+
+  function pushSnapshotImmediate() {
+    const snap = snapshotState();
+    // truncate any "future" history if we've undone some actions
+    const truncated = historyIndex() < history().length - 1 ? history().slice(0, historyIndex() + 1) : history();
+    const next = [...truncated, snap].slice(-MAX_HISTORY);
+    setHistory(next);
+    setHistoryIndex(next.length - 1);
+  }
+
+  function pushSnapshotDebounced(ms = 600) {
+    clearTimeout(historyDebounceTimer);
+    historyDebounceTimer = setTimeout(() => pushSnapshotImmediate(), ms);
+  }
+
+  function restoreSnapshotAt(idx: number) {
+    const s = history()[idx];
+    if (!s) return;
+    // Replace stores with snapshot content
+    setBlocks(s.blocks as any);
+    setNodes(s.nodes as any);
+    setSizes(s.sizes as any);
+    setHistoryIndex(idx);
+  }
+
+  function undo() {
+    if (historyIndex() > 0) restoreSnapshotAt(historyIndex() - 1);
+  }
+
+  function redo() {
+    if (historyIndex() < history().length - 1) restoreSnapshotAt(historyIndex() + 1);
+  }
+
   // ── LocalStorage ────────────────────────────────────────────────────────────
   onMount(() => { 
     try {
@@ -90,6 +136,24 @@ export default function Home() {
       } catch (e) {
         console.warn("Failed to init Typst compiler:", e);
       }
+      // push initial snapshot after restoring from localStorage
+      pushSnapshotImmediate();
+
+      // keyboard shortcuts: Ctrl/Cmd+Z = undo, Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z = redo
+      const onKeyDown = (e: KeyboardEvent) => {
+        const meta = e.ctrlKey || e.metaKey;
+        if (!meta) return;
+        const k = e.key.toLowerCase();
+        if (k === "z" && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+        } else if (k === "y" || (k === "z" && e.shiftKey)) {
+          e.preventDefault();
+          redo();
+        }
+      };
+      globalThis.addEventListener("keydown", onKeyDown);
+      onCleanup(() => globalThis.removeEventListener("keydown", onKeyDown));
     } catch (e) {
       console.warn(e);
     }
@@ -132,34 +196,41 @@ export default function Home() {
   // ── Snippet (left panel) management ─────────────────────────────────────────
   function addBlock() {
     setBlocks(produce((s) => s.unshift({ id: uuid(), title: "Untitled", content: "" })));
+    pushSnapshotImmediate();
   }
 
   function updateBlock(id: string, patch: Partial<Block>) {
     const idx = blocks.findIndex((x) => x.id === id);
     if (idx >= 0) setBlocks(idx, patch);
+    pushSnapshotDebounced();
   }
 
   function removeBlock(id: string) {
     setBlocks(produce((s) => { const i = s.findIndex((x) => x.id === id); if (i >= 0) s.splice(i, 1); }));
+    pushSnapshotImmediate();
   }
 
   // ── Editor node management ───────────────────────────────────────────────────
   function addTextNode() {
     setNodes(produce((s) => s.push({ id: uuid(), type: "text" as const, content: "" })));
+    pushSnapshotImmediate();
   }
 
   function updateTextNode(id: string, content: string) {
     const idx = nodes.findIndex((n) => n.id === id);
     if (idx >= 0) setNodes(produce((s) => { const n = s[idx]; if (n.type === "text") n.content = content; }));
+    pushSnapshotDebounced();
   }
 
   function updateSnippetVar(nodeId: string, varName: string, value: string) {
     const idx = nodes.findIndex((n) => n.id === nodeId);
     if (idx >= 0) setNodes(produce((s) => { const n = s[idx]; if (n.type === "snippet") n.vars[varName] = value; }));
+    pushSnapshotDebounced();
   }
 
   function removeNode(id: string) {
     setNodes(produce((s) => { const i = s.findIndex((n) => n.id === id); if (i >= 0) s.splice(i, 1); }));
+    pushSnapshotImmediate();
   }
 
   // ── Drag: snippet panel → editor ─────────────────────────────────────────────
@@ -201,6 +272,7 @@ export default function Home() {
       const insertAt = srcIdx < target ? target - 1 : target;
       if (insertAt !== srcIdx) {
         setNodes(produce((s) => { const [m] = s.splice(srcIdx, 1); s.splice(insertAt, 0, m); }));
+        pushSnapshotImmediate();
       }
     };
 
@@ -218,6 +290,7 @@ export default function Home() {
         const b = blocks.find((x) => x.id === obj.id);
         if (!b) return;
         setNodes(produce((s) => s.push(blockToNode(b))));
+        pushSnapshotImmediate();
       }
     } catch (err) {
       console.warn(err);
@@ -253,6 +326,7 @@ export default function Home() {
       setIsDraggingPanel(false);
       globalThis.removeEventListener("mousemove", onMove);
       globalThis.removeEventListener("mouseup", onUp);
+      pushSnapshotImmediate();
     };
     globalThis.addEventListener("mousemove", onMove);
     globalThis.addEventListener("mouseup", onUp);
@@ -275,6 +349,25 @@ export default function Home() {
         </svg>
         <span class="text-[15px] font-bold text-[#f1f5f9] tracking-tight">Cover Letter Builder</span>
         <span class="text-[11px] text-[#475569] ml-0.5">· Typst</span>
+        <div class="ml-auto flex items-center gap-2">
+          <button
+            onClick={undo}
+            disabled={historyIndex() <= 0}
+            class="px-2 py-1 rounded-md bg-transparent text-[#94a3b8] border border-[#33415533] text-[12px] cursor-pointer hover:bg-[#33415510] disabled:opacity-40 flex items-center gap-2"
+            title="Undo (Ctrl/Cmd+Z)"
+          >
+            <i class="i-mdi:undo text-[16px]" aria-hidden="true" />
+          </button>
+          <button
+            onClick={redo}
+            disabled={historyIndex() >= history().length - 1}
+            class="px-2 py-1 rounded-md bg-transparent text-[#94a3b8] border border-[#33415533] text-[12px] cursor-pointer hover:bg-[#33415510] disabled:opacity-40 flex items-center gap-2"
+            title="Redo (Ctrl/Cmd+Y / Ctrl/Cmd+Shift+Z)"
+          >
+            <i class="i-mdi:redo text-[16px]" aria-hidden="true" />
+          </button>
+          <div class="text-[11px] text-[#475569] ml-2">{Math.max(0, historyIndex() + 1)}/{history().length}</div>
+        </div>
       </header>
 
       {/* ── Three-panel row ── */}
@@ -320,8 +413,8 @@ export default function Home() {
                       )}</For>
                     </div>
                   </Show>
-                  <div class="px-2.5 pt-1.5 pb-2 flex gap-1.5 justify-end border-t border-[#0f172a]">
-                    <button onClick={() => setNodes(produce((s) => s.push(blockToNode(b))))} class="px-2 py-0.5 rounded bg-transparent text-[#34d399] border border-[#34d39940] text-[11px] cursor-pointer hover:bg-[#34d39910]">Insert</button>
+                    <div class="px-2.5 pt-1.5 pb-2 flex gap-1.5 justify-end border-t border-[#0f172a]">
+                    <button onClick={() => { setNodes(produce((s) => s.push(blockToNode(b)))); pushSnapshotImmediate(); }} class="px-2 py-0.5 rounded bg-transparent text-[#34d399] border border-[#34d39940] text-[11px] cursor-pointer hover:bg-[#34d39910]">Insert</button>
                     <button onClick={() => removeBlock(b.id)} class="px-2 py-0.5 rounded bg-transparent text-[#f87171] border border-[#f8717140] text-[11px] cursor-pointer hover:bg-[#f8717110]">Delete</button>
                   </div>
                 </div>
@@ -345,11 +438,11 @@ export default function Home() {
           onDrop={handleEditorDrop}
           onDragOver={(e) => { e.preventDefault(); setDropIndex(nodes.length); }}
         >
-          <div class="px-3.5 py-2.5 border-b border-[#1e293b] flex items-center justify-between shrink-0">
+              <div class="px-3.5 py-2.5 border-b border-[#1e293b] flex items-center justify-between shrink-0">
             <span class="text-[11px] font-semibold text-[#64748b] uppercase tracking-widest">Editor</span>
             <div class="flex gap-1.5">
               <button onClick={addTextNode} class="px-3 py-1 rounded-md bg-[#3b82f6] text-white text-[12px] font-medium border-none cursor-pointer hover:bg-blue-500">+ Text</button>
-              <button onClick={() => setNodes([])} class="px-3 py-1 rounded-md bg-transparent text-[#f87171] border border-[#f8717140] text-[12px] cursor-pointer hover:bg-[#f8717110]">Clear</button>
+              <button onClick={() => { setNodes([]); pushSnapshotImmediate(); }} class="px-3 py-1 rounded-md bg-transparent text-[#f87171] border border-[#f8717140] text-[12px] cursor-pointer hover:bg-[#f8717110]">Clear</button>
             </div>
           </div>
           <div ref={editorListRef} class="overflow-auto flex-1 p-2.5">
