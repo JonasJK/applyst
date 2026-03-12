@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { createStore, produce } from "solid-js/store";
-const compilerWasmUrl = "https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@0.7.0-rc2/pkg/typst_ts_web_compiler_bg.wasm";
+const compilerWasmUrl =
+  "https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@0.7.0-rc2/pkg/typst_ts_web_compiler_bg.wasm";
 import { setImportWasmModule as setCompilerImporter } from "@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler.mjs";
 import { $typst } from "@myriaddreamin/typst.ts";
 
@@ -76,20 +77,23 @@ export default function Home() {
   const [blockDropIndex, setBlockDropIndex] = createSignal<number | null>(null);
   const [draggingBlockId, setDraggingBlockId] = createSignal("");
   const blockTitleRefs: Record<string, HTMLInputElement | undefined> = {};
-  const [focusBlockId, setFocusBlockId] = createSignal<string | null>(null);
 
   // ── Simple undo/redo history ─────────────────────────────────────────────
   const MAX_HISTORY = 200;
   const [history, setHistory] = createSignal<
-    Array<{ blocks: Block[]; nodes: EditorNode[]; sizes: any }>
+    Array<{
+      blocks: Block[];
+      nodes: EditorNode[];
+      sizes: { left: number; middle: number; right: number };
+    }>
   >([]);
   const [historyIndex, setHistoryIndex] = createSignal(-1);
   let historyDebounceTimer: ReturnType<typeof setTimeout> | undefined;
 
   function snapshotState() {
     return {
-      blocks: JSON.parse(JSON.stringify(blocks)) as Block[],
-      nodes: JSON.parse(JSON.stringify(nodes)) as EditorNode[],
+      blocks: structuredClone(blocks),
+      nodes: structuredClone(nodes),
       sizes: structuredClone(sizes()),
     };
   }
@@ -113,9 +117,9 @@ export default function Home() {
     const s = history()[idx];
     if (!s) return;
     // Replace stores with snapshot content
-    setBlocks(s.blocks as any);
-    setNodes(s.nodes as any);
-    setSizes(s.sizes as any);
+    setBlocks(s.blocks);
+    setNodes(s.nodes);
+    setSizes(s.sizes);
     setHistoryIndex(idx);
   }
 
@@ -136,7 +140,7 @@ export default function Home() {
       if (b) {
         const parsed = JSON.parse(b) as Block[];
         parsed.sort((x, y) => x.id.localeCompare(y.id));
-        setBlocks(parsed as any);
+        setBlocks(parsed);
       }
       const nd = localStorage.getItem(LS_KEYS.nodes);
       if (nd) setNodes(JSON.parse(nd));
@@ -180,11 +184,11 @@ export default function Home() {
 
   // ── PDF render ──────────────────────────────────────────────────────────────
   let renderSeq = 0;
-  let currentBlobUrl = "";
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => {
-    if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+    slotUrls().forEach((url) => url && URL.revokeObjectURL(url));
     clearTimeout(debounceTimer);
+    clearTimeout(historyDebounceTimer);
   });
 
   createEffect(() => {
@@ -196,14 +200,15 @@ export default function Home() {
       try {
         const pdf = await $typst.pdf({ mainContent: text });
         if (seq !== renderSeq) return;
-        if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
-        const blob = new Blob([pdf as BlobPart], { type: "application/pdf" });
-        currentBlobUrl = URL.createObjectURL(blob);
-        setPdfUrl(currentBlobUrl);
-        // Load the new URL into the inactive slot
+        const newUrl = URL.createObjectURL(
+          new Blob([pdf as BlobPart], { type: "application/pdf" }),
+        );
+        setPdfUrl(newUrl);
         setSlotUrls((prev) => {
           const next: [string, string] = [prev[0], prev[1]];
-          next[activeSlot() === 0 ? 1 : 0] = currentBlobUrl;
+          const targetSlot = activeSlot() === 0 ? 1 : 0;
+          if (prev[targetSlot]) URL.revokeObjectURL(prev[targetSlot]);
+          next[targetSlot] = newUrl;
           return next;
         });
       } catch (err) {
@@ -217,14 +222,12 @@ export default function Home() {
     const id = uuid();
     setBlocks(produce((s) => s.push({ id, title: "Untitled", content: "" })));
     // schedule focusing the new block's title input
-    setFocusBlockId(id);
     setTimeout(() => {
       const el = blockTitleRefs[id];
       if (el) {
         el.focus();
         el.select();
       }
-      setFocusBlockId(null);
     }, 0);
     pushSnapshotImmediate();
   }
@@ -239,8 +242,8 @@ export default function Home() {
     const varNames = parseVarNames(newContent);
     setNodes(
       produce((s) => {
-        for (let i = 0; i < s.length; i++) {
-          const n = s[i];
+        for (const element of s) {
+          const n = element;
           if (n.type === "snippet" && n.blockId === id) {
             const existing = n.vars || {};
             n.template = newContent;
@@ -403,7 +406,7 @@ export default function Home() {
   function startBlockDrag(e: PointerEvent, blockId: string) {
     // don't prevent native mouse dragstart — only prevent for touch/pen so
     // pointer-based reordering still works on touch devices
-    if ((e as PointerEvent).pointerType !== "mouse") e.preventDefault();
+    if (e.pointerType !== "mouse") e.preventDefault();
     setDraggingBlockId(blockId);
 
     const getInsertIdx = (clientY: number) => {
@@ -443,15 +446,6 @@ export default function Home() {
 
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp);
-  }
-
-  function handleEditorDrop(e: DragEvent) {
-    // Cross-panel snippet drops are intentionally ignored; insertion is done
-    // via the Insert button. Clear transient drag state and return.
-    e.preventDefault();
-    setDropIndex(null);
-    setDraggingBlockId("");
-    return;
   }
 
   // Snippet list reorder handlers \
@@ -507,11 +501,6 @@ export default function Home() {
     }
   }
 
-  function onBlockDragEnd() {
-    setDraggingBlockId("");
-    setBlockDropIndex(null);
-  }
-
   // ── Panel resizing ───────────────────────────────────────────────────────────
   let rootEl: HTMLDivElement | undefined;
 
@@ -559,9 +548,9 @@ export default function Home() {
     try {
       const data = await importJSON(file);
       if (!data) throw new Error("No data in file");
-      if (Array.isArray(data.blocks)) setBlocks(data.blocks as any);
-      if (Array.isArray(data.nodes)) setNodes(data.nodes as any);
-      if (data.sizes) setSizes(data.sizes as any);
+      if (Array.isArray(data.blocks)) setBlocks(data.blocks);
+      if (Array.isArray(data.nodes)) setNodes(data.nodes);
+      if (data.sizes) setSizes(data.sizes);
       pushSnapshotImmediate();
     } catch (err: any) {
       console.error("Import failed:", err);
@@ -577,8 +566,8 @@ export default function Home() {
 
   function handleExport() {
     const payload = {
-      blocks: JSON.parse(JSON.stringify(blocks)),
-      nodes: JSON.parse(JSON.stringify(nodes)),
+      blocks: structuredClone(blocks),
+      nodes: structuredClone(nodes),
       sizes: structuredClone(sizes()),
     };
     exportJSON("applyst-export.json", payload);
@@ -877,45 +866,50 @@ export default function Home() {
 
                     {/* Snippet node: variable inputs */}
                     <Show when={node.type === "snippet"}>
-                      <Show
-                        when={parseVarNames((node as SnippetNode).template).length > 0}
-                        fallback={
-                          <div class="pl-7 pr-2.5 py-2 text-[11px] text-[#334155] italic">
-                            No variables — snippet will render as-is
-                          </div>
-                        }
-                      >
-                        <div class="py-1 pb-2">
-                          <For each={parseVarNames((node as SnippetNode).template)}>
-                            {(varName) => (
-                              <div class="flex items-center gap-2 px-2 pl-7 py-1">
-                                <span class="text-[11px] text-[#60a5fa] min-w-[90px] shrink-0 font-mono">
-                                  {varName}
-                                </span>
-                                <input
-                                  value={(node as SnippetNode).vars[varName] ?? ""}
-                                  onInput={(e) =>
-                                    updateSnippetVar(
-                                      node.id,
-                                      varName,
-                                      (e.target as HTMLInputElement).value,
-                                    )
-                                  }
-                                  placeholder={`Enter ${varName}…`}
-                                  class="flex-1 px-1.5 py-1 border border-[#1e293b] rounded bg-[#0f172a] text-[#e2e8f0] text-[12px] outline-none"
-                                />
-                                <button
-                                  onClick={() => applyVar(node.id, varName)}
-                                  class="ml-2 px-2 py-1 rounded bg-transparent text-[#34d399] border border-[#34d39933] hover:bg-[#34d39910] text-[12px]"
-                                  title={`Apply ${varName} to snippet template`}
-                                >
-                                  <i class="i-mdi:check text-[14px]" aria-hidden="true" />
-                                </button>
+                      {() => {
+                        const vars = parseVarNames((node as SnippetNode).template);
+                        return (
+                          <Show
+                            when={vars.length > 0}
+                            fallback={
+                              <div class="pl-7 pr-2.5 py-2 text-[11px] text-[#334155] italic">
+                                No variables — snippet will render as-is
                               </div>
-                            )}
-                          </For>
-                        </div>
-                      </Show>
+                            }
+                          >
+                            <div class="py-1 pb-2">
+                              <For each={vars}>
+                                {(varName) => (
+                                  <div class="flex items-center gap-2 px-2 pl-7 py-1">
+                                    <span class="text-[11px] text-[#60a5fa] min-w-[90px] shrink-0 font-mono">
+                                      {varName}
+                                    </span>
+                                    <input
+                                      value={(node as SnippetNode).vars[varName] ?? ""}
+                                      onInput={(e) =>
+                                        updateSnippetVar(
+                                          node.id,
+                                          varName,
+                                          (e.target as HTMLInputElement).value,
+                                        )
+                                      }
+                                      placeholder={`Enter ${varName}…`}
+                                      class="flex-1 px-1.5 py-1 border border-[#1e293b] rounded bg-[#0f172a] text-[#e2e8f0] text-[12px] outline-none"
+                                    />
+                                    <button
+                                      onClick={() => applyVar(node.id, varName)}
+                                      class="ml-2 px-2 py-1 rounded bg-transparent text-[#34d399] border border-[#34d39933] hover:bg-[#34d39910] text-[12px]"
+                                      title={`Apply ${varName} to snippet template`}
+                                    >
+                                      <i class="i-mdi:check text-[14px]" aria-hidden="true" />
+                                    </button>
+                                  </div>
+                                )}
+                              </For>
+                            </div>
+                          </Show>
+                        );
+                      }}
                     </Show>
                   </div>
 
