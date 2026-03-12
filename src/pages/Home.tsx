@@ -6,7 +6,6 @@ import { $typst } from "@myriaddreamin/typst.ts";
 
 import { v4 as uuid } from "uuid";
 
-
 // ─── Types ───────────────────────────────────────────────────────────────────
 /** A snippet definition stored in the left panel */
 type Block = { id: string; title: string; content: string };
@@ -74,7 +73,9 @@ export default function Home() {
 
   // ── Simple undo/redo history ─────────────────────────────────────────────
   const MAX_HISTORY = 200;
-  const [history, setHistory] = createSignal<Array<{ blocks: Block[]; nodes: EditorNode[]; sizes: any }>>([]);
+  const [history, setHistory] = createSignal<
+    Array<{ blocks: Block[]; nodes: EditorNode[]; sizes: any }>
+  >([]);
   const [historyIndex, setHistoryIndex] = createSignal(-1);
   let historyDebounceTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -89,7 +90,8 @@ export default function Home() {
   function pushSnapshotImmediate() {
     const snap = snapshotState();
     // truncate any "future" history if we've undone some actions
-    const truncated = historyIndex() < history().length - 1 ? history().slice(0, historyIndex() + 1) : history();
+    const truncated =
+      historyIndex() < history().length - 1 ? history().slice(0, historyIndex() + 1) : history();
     const next = [...truncated, snap].slice(-MAX_HISTORY);
     setHistory(next);
     setHistoryIndex(next.length - 1);
@@ -119,7 +121,7 @@ export default function Home() {
   }
 
   // ── LocalStorage ────────────────────────────────────────────────────────────
-  onMount(() => { 
+  onMount(() => {
     try {
       const b = localStorage.getItem(LS_KEYS.blocks);
       if (b) setBlocks(JSON.parse(b));
@@ -186,7 +188,11 @@ export default function Home() {
         currentBlobUrl = URL.createObjectURL(blob);
         setPdfUrl(currentBlobUrl);
         // Load the new URL into the inactive slot
-        setSlotUrls((prev) => { const next: [string, string] = [prev[0], prev[1]]; next[activeSlot() === 0 ? 1 : 0] = currentBlobUrl + "#toolbar=0"; return next; });
+        setSlotUrls((prev) => {
+          const next: [string, string] = [prev[0], prev[1]];
+          next[activeSlot() === 0 ? 1 : 0] = currentBlobUrl + "#toolbar=0";
+          return next;
+        });
       } catch (err) {
         console.error("Typst PDF render failed:", err);
       }
@@ -206,7 +212,12 @@ export default function Home() {
   }
 
   function removeBlock(id: string) {
-    setBlocks(produce((s) => { const i = s.findIndex((x) => x.id === id); if (i >= 0) s.splice(i, 1); }));
+    setBlocks(
+      produce((s) => {
+        const i = s.findIndex((x) => x.id === id);
+        if (i >= 0) s.splice(i, 1);
+      }),
+    );
     pushSnapshotImmediate();
   }
 
@@ -218,18 +229,35 @@ export default function Home() {
 
   function updateTextNode(id: string, content: string) {
     const idx = nodes.findIndex((n) => n.id === id);
-    if (idx >= 0) setNodes(produce((s) => { const n = s[idx]; if (n.type === "text") n.content = content; }));
+    if (idx >= 0)
+      setNodes(
+        produce((s) => {
+          const n = s[idx];
+          if (n.type === "text") n.content = content;
+        }),
+      );
     pushSnapshotDebounced();
   }
 
   function updateSnippetVar(nodeId: string, varName: string, value: string) {
     const idx = nodes.findIndex((n) => n.id === nodeId);
-    if (idx >= 0) setNodes(produce((s) => { const n = s[idx]; if (n.type === "snippet") n.vars[varName] = value; }));
+    if (idx >= 0)
+      setNodes(
+        produce((s) => {
+          const n = s[idx];
+          if (n.type === "snippet") n.vars[varName] = value;
+        }),
+      );
     pushSnapshotDebounced();
   }
 
   function removeNode(id: string) {
-    setNodes(produce((s) => { const i = s.findIndex((n) => n.id === id); if (i >= 0) s.splice(i, 1); }));
+    setNodes(
+      produce((s) => {
+        const i = s.findIndex((n) => n.id === id);
+        if (i >= 0) s.splice(i, 1);
+      }),
+    );
     pushSnapshotImmediate();
   }
 
@@ -271,7 +299,12 @@ export default function Home() {
       if (srcIdx === -1 || target === null) return;
       const insertAt = srcIdx < target ? target - 1 : target;
       if (insertAt !== srcIdx) {
-        setNodes(produce((s) => { const [m] = s.splice(srcIdx, 1); s.splice(insertAt, 0, m); }));
+        setNodes(
+          produce((s) => {
+            const [m] = s.splice(srcIdx, 1);
+            s.splice(insertAt, 0, m);
+          }),
+        );
         pushSnapshotImmediate();
       }
     };
@@ -306,7 +339,10 @@ export default function Home() {
     const MIN = 10;
     const onMove = (ev: MouseEvent) => {
       // If the mouse button was released outside the window, stop dragging.
-      if (ev.buttons === 0) { onUp(); return; }
+      if (ev.buttons === 0) {
+        onUp();
+        return;
+      }
       if (!rootEl) return;
       const rect = rootEl.getBoundingClientRect();
       const total = rect.width;
@@ -332,7 +368,6 @@ export default function Home() {
     globalThis.addEventListener("mouseup", onUp);
   }
 
-
   // ── Styles ───────────────────────────────────────────────────────────────────
 
   return (
@@ -345,9 +380,16 @@ export default function Home() {
       <header class="h-12 bg-[#1e293b] border-b border-[#334155] flex items-center px-5 gap-2.5 shrink-0">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
           <rect x="2" y="2" width="14" height="14" rx="3" stroke="#3b82f6" stroke-width="1.5" />
-          <path d="M5 6h8M5 9h6M5 12h4" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round" />
+          <path
+            d="M5 6h8M5 9h6M5 12h4"
+            stroke="#3b82f6"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
         </svg>
-        <span class="text-[15px] font-bold text-[#f1f5f9] tracking-tight">Cover Letter Builder</span>
+        <span class="text-[15px] font-bold text-[#f1f5f9] tracking-tight">
+          Cover Letter Builder
+        </span>
         <span class="text-[11px] text-[#475569] ml-0.5">· Typst</span>
         <div class="ml-auto flex items-center gap-2">
           <button
@@ -366,18 +408,29 @@ export default function Home() {
           >
             <i class="i-mdi:redo text-[16px]" aria-hidden="true" />
           </button>
-          <div class="text-[11px] text-[#475569] ml-2">{Math.max(0, historyIndex() + 1)}/{history().length}</div>
+          <div class="text-[11px] text-[#475569] ml-2">
+            {Math.max(0, historyIndex() + 1)}/{history().length}
+          </div>
         </div>
       </header>
 
       {/* ── Three-panel row ── */}
       <div class="flex flex-1 overflow-hidden">
-
         {/* ═══ Left: Snippet Library ═══════════════════════════════════════════ */}
-        <div style={{ width: `${sizes().left}%` }} class="flex flex-col bg-[#1a2332] border-r border-[#1e293b] overflow-hidden">
+        <div
+          style={{ width: `${sizes().left}%` }}
+          class="flex flex-col bg-[#1a2332] border-r border-[#1e293b] overflow-hidden"
+        >
           <div class="px-3.5 py-2.5 border-b border-[#1e293b] flex items-center justify-between shrink-0">
-            <span class="text-[11px] font-semibold text-[#64748b] uppercase tracking-widest">Snippets</span>
-            <button onClick={addBlock} class="px-3 py-1 rounded-md bg-[#3b82f6] text-white text-[12px] font-medium border-none cursor-pointer hover:bg-blue-500">+ New</button>
+            <span class="text-[11px] font-semibold text-[#64748b] uppercase tracking-widest">
+              Snippets
+            </span>
+            <button
+              onClick={addBlock}
+              class="px-3 py-1 rounded-md bg-[#3b82f6] text-white text-[12px] font-medium border-none cursor-pointer hover:bg-blue-500"
+            >
+              + New
+            </button>
           </div>
           <div class="overflow-auto flex-1 p-2.5">
             <Show when={blocks.length === 0}>
@@ -385,41 +438,66 @@ export default function Home() {
                 No snippets — click <strong class="text-[#3b82f6]">+ New</strong> to create one.
               </div>
             </Show>
-            <For each={blocks}>{(b) => {
-              const vars = () => parseVarNames(b.content);
-              return (
-                <div draggable onDragStart={(e) => onSnippetDragStart(e, b)} class="mb-2 rounded-lg border border-[#1e3a5f] bg-[#1e293b] cursor-grab">
-                  <div class="pt-2.5 px-2.5 pb-1.5">
-                    <input
-                      value={b.title}
-                      onInput={(e) => updateBlock(b.id, { title: (e.target as HTMLInputElement).value })}
-                      class="w-full px-2 py-1 mb-1.5 border border-[#334155] rounded bg-[#0f172a] text-[#e2e8f0] text-[13px] font-semibold outline-none box-border"
-                      placeholder="Snippet title"
-                    />
-                    <textarea
-                      value={b.content}
-                      onInput={(e) => updateBlock(b.id, { content: (e.target as HTMLTextAreaElement).value })}
-                      rows={4}
-                      class="w-full px-2 py-1 border border-[#334155] rounded bg-[#0f172a] text-[#94a3b8] text-[12px] font-mono resize-y outline-none box-border"
-                      placeholder={"Typst content…\nUse {{varName}} for variables"}
-                    />
-                  </div>
-                  <Show when={vars().length > 0}>
-                    <div class="px-2.5 pb-1.5 flex flex-wrap gap-1">
-                      <For each={vars()}>{(v) => (
-                        <span class="text-[10px] bg-[#0f172a] text-[#60a5fa] border border-[#1e3a5f] rounded px-1.5 py-px">
-                          {`{{${v}}}`}
-                        </span>
-                      )}</For>
+            <For each={blocks}>
+              {(b) => {
+                const vars = () => parseVarNames(b.content);
+                return (
+                  <div
+                    draggable
+                    onDragStart={(e) => onSnippetDragStart(e, b)}
+                    class="mb-2 rounded-lg border border-[#1e3a5f] bg-[#1e293b] cursor-grab"
+                  >
+                    <div class="pt-2.5 px-2.5 pb-1.5">
+                      <input
+                        value={b.title}
+                        onInput={(e) =>
+                          updateBlock(b.id, { title: (e.target as HTMLInputElement).value })
+                        }
+                        class="w-full px-2 py-1 mb-1.5 border border-[#334155] rounded bg-[#0f172a] text-[#e2e8f0] text-[13px] font-semibold outline-none box-border"
+                        placeholder="Snippet title"
+                      />
+                      <textarea
+                        value={b.content}
+                        onInput={(e) =>
+                          updateBlock(b.id, { content: (e.target as HTMLTextAreaElement).value })
+                        }
+                        rows={4}
+                        class="w-full px-2 py-1 border border-[#334155] rounded bg-[#0f172a] text-[#94a3b8] text-[12px] font-mono resize-y outline-none box-border"
+                        placeholder={"Typst content…\nUse {{varName}} for variables"}
+                      />
                     </div>
-                  </Show>
+                    <Show when={vars().length > 0}>
+                      <div class="px-2.5 pb-1.5 flex flex-wrap gap-1">
+                        <For each={vars()}>
+                          {(v) => (
+                            <span class="text-[10px] bg-[#0f172a] text-[#60a5fa] border border-[#1e3a5f] rounded px-1.5 py-px">
+                              {`{{${v}}}`}
+                            </span>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
                     <div class="px-2.5 pt-1.5 pb-2 flex gap-1.5 justify-end border-t border-[#0f172a]">
-                    <button onClick={() => { setNodes(produce((s) => s.push(blockToNode(b)))); pushSnapshotImmediate(); }} class="px-2 py-0.5 rounded bg-transparent text-[#34d399] border border-[#34d39940] text-[11px] cursor-pointer hover:bg-[#34d39910]">Insert</button>
-                    <button onClick={() => removeBlock(b.id)} class="px-2 py-0.5 rounded bg-transparent text-[#f87171] border border-[#f8717140] text-[11px] cursor-pointer hover:bg-[#f8717110]">Delete</button>
+                      <button
+                        onClick={() => {
+                          setNodes(produce((s) => s.push(blockToNode(b))));
+                          pushSnapshotImmediate();
+                        }}
+                        class="px-2 py-0.5 rounded bg-transparent text-[#34d399] border border-[#34d39940] text-[11px] cursor-pointer hover:bg-[#34d39910]"
+                      >
+                        Insert
+                      </button>
+                      <button
+                        onClick={() => removeBlock(b.id)}
+                        class="px-2 py-0.5 rounded bg-transparent text-[#f87171] border border-[#f8717140] text-[11px] cursor-pointer hover:bg-[#f8717110]"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            }}</For>
+                );
+              }}
+            </For>
           </div>
         </div>
 
@@ -436,13 +514,31 @@ export default function Home() {
           style={{ width: `${sizes().middle}%` }}
           class="flex flex-col bg-[#0f172a] overflow-hidden"
           onDrop={handleEditorDrop}
-          onDragOver={(e) => { e.preventDefault(); setDropIndex(nodes.length); }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDropIndex(nodes.length);
+          }}
         >
-              <div class="px-3.5 py-2.5 border-b border-[#1e293b] flex items-center justify-between shrink-0">
-            <span class="text-[11px] font-semibold text-[#64748b] uppercase tracking-widest">Editor</span>
+          <div class="px-3.5 py-2.5 border-b border-[#1e293b] flex items-center justify-between shrink-0">
+            <span class="text-[11px] font-semibold text-[#64748b] uppercase tracking-widest">
+              Editor
+            </span>
             <div class="flex gap-1.5">
-              <button onClick={addTextNode} class="px-3 py-1 rounded-md bg-[#3b82f6] text-white text-[12px] font-medium border-none cursor-pointer hover:bg-blue-500">+ Text</button>
-              <button onClick={() => { setNodes([]); pushSnapshotImmediate(); }} class="px-3 py-1 rounded-md bg-transparent text-[#f87171] border border-[#f8717140] text-[12px] cursor-pointer hover:bg-[#f8717110]">Clear</button>
+              <button
+                onClick={addTextNode}
+                class="px-3 py-1 rounded-md bg-[#3b82f6] text-white text-[12px] font-medium border-none cursor-pointer hover:bg-blue-500"
+              >
+                + Text
+              </button>
+              <button
+                onClick={() => {
+                  setNodes([]);
+                  pushSnapshotImmediate();
+                }}
+                class="px-3 py-1 rounded-md bg-transparent text-[#f87171] border border-[#f8717140] text-[12px] cursor-pointer hover:bg-[#f8717110]"
+              >
+                Clear
+              </button>
             </div>
           </div>
           <div ref={editorListRef} class="overflow-auto flex-1 p-2.5">
@@ -450,80 +546,114 @@ export default function Home() {
             <Show when={nodes.length === 0}>
               <div class="border-2 border-dashed border-[#1e293b] rounded-xl p-12 text-center text-[#334155] text-[13px]">
                 <div class="text-[28px] mb-2 opacity-35">✎</div>
-                Drag snippets here or click <strong class="text-[#3b82f6]">+ Text</strong> to start writing
+                Drag snippets here or click <strong class="text-[#3b82f6]">+ Text</strong> to start
+                writing
               </div>
             </Show>
 
             {/* Drop indicator before first node */}
-            <Show when={dropIndex() === 0}><div class="h-0.5 bg-[#3b82f6] rounded my-0.5" /></Show>
+            <Show when={dropIndex() === 0}>
+              <div class="h-0.5 bg-[#3b82f6] rounded my-0.5" />
+            </Show>
 
-            <For each={nodes}>{(node, i) => (
-              <div data-node-wrap class="mb-1">
-                {/* The node card */}
-                <div
-                  class="rounded-lg border border-[#1e293b] bg-[#1a2332] overflow-hidden transition-opacity duration-150"
-                  style={{ opacity: draggingNodeId() === node.id ? "0.4" : "1" }}
-                >
-                  {/* Node header row */}
-                  <div class="flex items-center gap-1.5 px-2 py-1.5 border-b border-[#0f172a]">
-                    <span
-                      class="text-[#334155] cursor-grab select-none shrink-0 leading-none touch-none hover:text-[#64748b]"
-                      title="Drag to reorder"
-                      onPointerDown={(e) => startNodeDrag(e, node.id)}
-                    >⠿</span>
-                    <span class={`text-[10px] font-bold tracking-widest uppercase flex-1 ${node.type === "snippet" ? "text-[#60a5fa]" : "text-[#94a3b8]"}`}>
-                      {node.type === "snippet" ? node.title : "Text"}
-                    </span>
-                    <button onClick={() => removeNode(node.id)} class="px-1.5 py-px rounded bg-transparent text-[#64748b] border border-[#33415599] text-[12px] cursor-pointer hover:text-[#f87171] hover:border-[#f8717140]" title="Remove">✕</button>
+            <For each={nodes}>
+              {(node, i) => (
+                <div data-node-wrap class="mb-1">
+                  {/* The node card */}
+                  <div
+                    class="rounded-lg border border-[#1e293b] bg-[#1a2332] overflow-hidden transition-opacity duration-150"
+                    style={{ opacity: draggingNodeId() === node.id ? "0.4" : "1" }}
+                  >
+                    {/* Node header row */}
+                    <div class="flex items-center gap-1.5 px-2 py-1.5 border-b border-[#0f172a]">
+                      <span
+                        class="text-[#334155] cursor-grab select-none shrink-0 leading-none touch-none hover:text-[#64748b]"
+                        title="Drag to reorder"
+                        onPointerDown={(e) => startNodeDrag(e, node.id)}
+                      >
+                        ⠿
+                      </span>
+                      <span
+                        class={`text-[10px] font-bold tracking-widest uppercase flex-1 ${node.type === "snippet" ? "text-[#60a5fa]" : "text-[#94a3b8]"}`}
+                      >
+                        {node.type === "snippet" ? node.title : "Text"}
+                      </span>
+                      <button
+                        onClick={() => removeNode(node.id)}
+                        class="px-1.5 py-px rounded bg-transparent text-[#64748b] border border-[#33415599] text-[12px] cursor-pointer hover:text-[#f87171] hover:border-[#f8717140]"
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Text node: plain textarea */}
+                    <Show when={node.type === "text"}>
+                      <textarea
+                        value={(node as TextNode).content}
+                        onInput={(e) =>
+                          updateTextNode(node.id, (e.target as HTMLTextAreaElement).value)
+                        }
+                        rows={4}
+                        placeholder="Write Typst content…"
+                        class="w-full px-2.5 py-2 border-none bg-transparent text-[#94a3b8] text-[12px] font-mono resize-y outline-none box-border"
+                      />
+                    </Show>
+
+                    {/* Snippet node: variable inputs */}
+                    <Show when={node.type === "snippet"}>
+                      <Show
+                        when={parseVarNames((node as SnippetNode).template).length > 0}
+                        fallback={
+                          <div class="pl-7 pr-2.5 py-2 text-[11px] text-[#334155] italic">
+                            No variables — snippet will render as-is
+                          </div>
+                        }
+                      >
+                        <div class="py-1 pb-2">
+                          <For each={parseVarNames((node as SnippetNode).template)}>
+                            {(varName) => (
+                              <div class="flex items-center gap-2 px-2 pl-7 py-1">
+                                <span class="text-[11px] text-[#60a5fa] min-w-[90px] shrink-0 font-mono">
+                                  {varName}
+                                </span>
+                                <input
+                                  value={(node as SnippetNode).vars[varName] ?? ""}
+                                  onInput={(e) =>
+                                    updateSnippetVar(
+                                      node.id,
+                                      varName,
+                                      (e.target as HTMLInputElement).value,
+                                    )
+                                  }
+                                  placeholder={`Enter ${varName}…`}
+                                  class="flex-1 px-1.5 py-1 border border-[#1e293b] rounded bg-[#0f172a] text-[#e2e8f0] text-[12px] outline-none"
+                                />
+                              </div>
+                            )}
+                          </For>
+                        </div>
+                      </Show>
+                    </Show>
                   </div>
 
-                  {/* Text node: plain textarea */}
-                  <Show when={node.type === "text"}>
-                    <textarea
-                      value={(node as TextNode).content}
-                      onInput={(e) => updateTextNode(node.id, (e.target as HTMLTextAreaElement).value)}
-                      rows={4}
-                      placeholder="Write Typst content…"
-                      class="w-full px-2.5 py-2 border-none bg-transparent text-[#94a3b8] text-[12px] font-mono resize-y outline-none box-border"
-                    />
-                  </Show>
-
-                  {/* Snippet node: variable inputs */}
-                  <Show when={node.type === "snippet"}>
-                    <Show
-                      when={parseVarNames((node as SnippetNode).template).length > 0}
-                      fallback={
-                        <div class="pl-7 pr-2.5 py-2 text-[11px] text-[#334155] italic">
-                          No variables — snippet will render as-is
-                        </div>
-                      }
-                    >
-                      <div class="py-1 pb-2">
-                        <For each={parseVarNames((node as SnippetNode).template)}>{(varName) => (
-                          <div class="flex items-center gap-2 px-2 pl-7 py-1">
-                            <span class="text-[11px] text-[#60a5fa] min-w-[90px] shrink-0 font-mono">
-                              {varName}
-                            </span>
-                            <input
-                              value={(node as SnippetNode).vars[varName] ?? ""}
-                              onInput={(e) => updateSnippetVar(node.id, varName, (e.target as HTMLInputElement).value)}
-                              placeholder={`Enter ${varName}…`}
-                              class="flex-1 px-1.5 py-1 border border-[#1e293b] rounded bg-[#0f172a] text-[#e2e8f0] text-[12px] outline-none"
-                            />
-                          </div>
-                        )}</For>
-                      </div>
-                    </Show>
+                  {/* Drop indicator after this node */}
+                  <Show when={dropIndex() === i() + 1}>
+                    <div class="h-0.5 bg-[#3b82f6] rounded my-0.5" />
                   </Show>
                 </div>
-
-                {/* Drop indicator after this node */}
-                <Show when={dropIndex() === i() + 1}><div class="h-0.5 bg-[#3b82f6] rounded my-0.5" /></Show>
-              </div>
-            )}</For>
+              )}
+            </For>
 
             {/* Drop indicator at end (past all nodes) */}
-            <Show when={dropIndex() !== null && dropIndex()! > 0 && dropIndex() === nodes.length && nodes.length > 0}>
+            <Show
+              when={
+                dropIndex() !== null &&
+                dropIndex()! > 0 &&
+                dropIndex() === nodes.length &&
+                nodes.length > 0
+              }
+            >
               <div class="h-0.5 bg-[#3b82f6] rounded my-0.5" />
             </Show>
           </div>
@@ -537,36 +667,66 @@ export default function Home() {
         />
 
         {/* ═══ Right: PDF Preview ══════════════════════════════════════════════ */}
-        <div style={{ width: `${sizes().right}%` }} class="flex flex-col bg-[#0f172a] overflow-hidden">
+        <div
+          style={{ width: `${sizes().right}%` }}
+          class="flex flex-col bg-[#0f172a] overflow-hidden"
+        >
           <div class="px-3.5 py-2.5 border-b border-[#1e293b] flex items-center justify-between shrink-0">
-            <span class="text-[11px] font-semibold text-[#64748b] uppercase tracking-widest">Preview</span>
+            <span class="text-[11px] font-semibold text-[#64748b] uppercase tracking-widest">
+              Preview
+            </span>
             <div class="flex items-center gap-1.5 text-[11px] text-[#334155]">
-              <div aria-hidden="true" class="w-1.5 h-1.5 rounded-full bg-[#22c55e] shadow-[0_0_6px_rgba(34,197,94,0.5)]" />
+              <div
+                aria-hidden="true"
+                class="w-1.5 h-1.5 rounded-full bg-[#22c55e] shadow-[0_0_6px_rgba(34,197,94,0.5)]"
+              />
               Live
             </div>
           </div>
           <div class="flex-1 relative bg-[#080f1a]">
             <Show when={!pdfUrl()}>
-              <div class="absolute inset-0 flex flex-col items-center justify-center text-[#334155] text-[13px] gap-2" style={{ "z-index": "1" }}>
+              <div
+                class="absolute inset-0 flex flex-col items-center justify-center text-[#334155] text-[13px] gap-2"
+                style={{ "z-index": "1" }}
+              >
                 <div class="text-[28px] opacity-30">📄</div>
                 Add content to see a preview
               </div>
             </Show>
             <iframe
               src={slotUrls()[0] || undefined}
-              onLoad={() => { if (slotUrls()[0] && activeSlot() !== 0) setActiveSlot(0); }}
-              style={{ opacity: activeSlot() === 0 ? "1" : "0", transition: "opacity 0.2s ease", position: "absolute", inset: "0", width: "100%", height: "100%", border: "none" }}
+              onLoad={() => {
+                if (slotUrls()[0] && activeSlot() !== 0) setActiveSlot(0);
+              }}
+              style={{
+                opacity: activeSlot() === 0 ? "1" : "0",
+                transition: "opacity 0.2s ease",
+                position: "absolute",
+                inset: "0",
+                width: "100%",
+                height: "100%",
+                border: "none",
+              }}
               title="PDF Preview A"
             />
             <iframe
               src={slotUrls()[1] || undefined}
-              onLoad={() => { if (slotUrls()[1] && activeSlot() !== 1) setActiveSlot(1); }}
-              style={{ opacity: activeSlot() === 1 ? "1" : "0", transition: "opacity 0.2s ease", position: "absolute", inset: "0", width: "100%", height: "100%", border: "none" }}
+              onLoad={() => {
+                if (slotUrls()[1] && activeSlot() !== 1) setActiveSlot(1);
+              }}
+              style={{
+                opacity: activeSlot() === 1 ? "1" : "0",
+                transition: "opacity 0.2s ease",
+                position: "absolute",
+                inset: "0",
+                width: "100%",
+                height: "100%",
+                border: "none",
+              }}
               title="PDF Preview B"
             />
           </div>
         </div>
-
       </div>
     </div>
   );
