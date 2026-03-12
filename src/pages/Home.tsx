@@ -4,7 +4,7 @@ import compilerWasmUrl from "@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_w
 import { setImportWasmModule as setCompilerImporter } from "@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler.mjs";
 import { $typst } from "@myriaddreamin/typst.ts";
 
-import { v4 as uuid } from "uuid";
+import { v7 as uuid } from "uuid";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 /** A snippet definition stored in the left panel */
@@ -72,6 +72,10 @@ export default function Home() {
   const [slotUrls, setSlotUrls] = createSignal<[string, string]>(["", ""]);
   const [dropIndex, setDropIndex] = createSignal<number | null>(null);
   const [draggingNodeId, setDraggingNodeId] = createSignal("");
+  const [blockDropIndex, setBlockDropIndex] = createSignal<number | null>(null);
+  const [draggingBlockId, setDraggingBlockId] = createSignal("");
+  const blockTitleRefs: Record<string, HTMLInputElement | undefined> = {};
+  const [focusBlockId, setFocusBlockId] = createSignal<string | null>(null);
 
   // ── Simple undo/redo history ─────────────────────────────────────────────
   const MAX_HISTORY = 200;
@@ -126,7 +130,13 @@ export default function Home() {
   onMount(() => {
     try {
       const b = localStorage.getItem(LS_KEYS.blocks);
-      if (b) setBlocks(JSON.parse(b));
+      if (b) {
+        const parsed = JSON.parse(b) as Block[];
+        // Sort by UUIDv7 lexicographic order (oldest first). If items came from older
+        // versions they may already be in desired order; fallback to string compare.
+        parsed.sort((x, y) => x.id.localeCompare(y.id));
+        setBlocks(parsed as any);
+      }
       const nd = localStorage.getItem(LS_KEYS.nodes);
       if (nd) setNodes(JSON.parse(nd));
       const s = localStorage.getItem(LS_KEYS.sizes);
@@ -203,7 +213,18 @@ export default function Home() {
 
   // ── Snippet (left panel) management ─────────────────────────────────────────
   function addBlock() {
-    setBlocks(produce((s) => s.unshift({ id: uuid(), title: "Untitled", content: "" })));
+    const id = uuid();
+    setBlocks(produce((s) => s.push({ id, title: "Untitled", content: "" })));
+    // schedule focusing the new block's title input
+    setFocusBlockId(id);
+    setTimeout(() => {
+      const el = blockTitleRefs[id];
+      if (el) {
+        el.focus();
+        el.select();
+      }
+      setFocusBlockId(null);
+    }, 0);
     pushSnapshotImmediate();
   }
 
@@ -328,15 +349,11 @@ export default function Home() {
     pushSnapshotImmediate();
   }
 
-  // ── Drag: snippet panel → editor ─────────────────────────────────────────────
-  function onSnippetDragStart(e: DragEvent, b: Block) {
-    if (!e.dataTransfer) return;
-    e.dataTransfer.setData("application/typst", JSON.stringify({ type: "block", id: b.id }));
-    e.dataTransfer.effectAllowed = "copy";
-  }
+  // Snippet cross-panel HTML5 drag has been disabled — use the Insert button.
 
   // ── Drag: reorder nodes within editor  ────
   let editorListRef: HTMLDivElement | undefined;
+  let blockListRef: HTMLDivElement | undefined;
 
   function startNodeDrag(e: PointerEvent, nodeId: string) {
     e.preventDefault();
@@ -380,21 +397,94 @@ export default function Home() {
     document.addEventListener("pointerup", onUp);
   }
 
-  function handleEditorDrop(e: DragEvent) {
-    e.preventDefault();
-    const raw = e.dataTransfer?.getData("application/typst");
-    if (!raw) return;
-    try {
-      const obj = JSON.parse(raw) as { type: string; id?: string };
-      if (obj.type === "block" && obj.id) {
-        const b = blocks.find((x) => x.id === obj.id);
-        if (!b) return;
-        setNodes(produce((s) => s.push(blockToNode(b))));
+  function startBlockDrag(e: PointerEvent, blockId: string) {
+    // don't prevent native mouse dragstart — only prevent for touch/pen so
+    // pointer-based reordering still works on touch devices
+    if ((e as PointerEvent).pointerType !== "mouse") e.preventDefault();
+    setDraggingBlockId(blockId);
+
+    const getInsertIdx = (clientY: number) => {
+      if (!blockListRef) return blocks.length;
+      const wraps = blockListRef.querySelectorAll<HTMLElement>('[data-block-wrap]');
+      for (let i = 0; i < wraps.length; i++) {
+        const r = wraps[i].getBoundingClientRect();
+        if (clientY < r.top + r.height / 2) return i;
+      }
+      return wraps.length;
+    };
+
+    setBlockDropIndex(getInsertIdx(e.clientY));
+
+    const onMove = (ev: PointerEvent) => setBlockDropIndex(getInsertIdx(ev.clientY));
+
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      const id = blockId;
+      const target = blockDropIndex();
+      setDraggingBlockId('');
+      setBlockDropIndex(null);
+      const srcIdx = blocks.findIndex((b) => b.id === id);
+      if (srcIdx === -1 || target === null) return;
+      const insertAt = srcIdx < target ? target - 1 : target;
+      if (insertAt !== srcIdx) {
+        setBlocks(
+          produce((s) => {
+            const [m] = s.splice(srcIdx, 1);
+            s.splice(insertAt, 0, m);
+          }),
+        );
         pushSnapshotImmediate();
       }
-    } catch (err) {
-      console.warn(err);
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }
+
+  function handleEditorDrop(e: DragEvent) {
+    // Cross-panel snippet drops are intentionally ignored; insertion is done
+    // via the Insert button. Clear transient drag state and return.
+    e.preventDefault();
+    setDropIndex(null);
+    setDraggingBlockId("");
+    return;
+  }
+
+  // Snippet list reorder handlers \
+  function onBlockListDragOver(e: DragEvent) {
+    e.preventDefault();
+    if (!blockListRef) return;
+    const wraps = blockListRef.querySelectorAll<HTMLElement>('[data-block-wrap]');
+    let idx = wraps.length;
+    for (let i = 0; i < wraps.length; i++) {
+      const r = wraps[i].getBoundingClientRect();
+      if (e.clientY < r.top + r.height / 2) { idx = i; break; }
     }
+    setBlockDropIndex(idx);
+  }
+
+  function onBlockListDrop(e: DragEvent) {
+    e.preventDefault();
+    const raw = e.dataTransfer?.getData('application/typst');
+    // prefer using our local draggingBlockId if present
+    const id = draggingBlockId() || (raw ? (() => { try { return JSON.parse(raw).id as string } catch { return undefined } })() : undefined);
+    if (!id) { setBlockDropIndex(null); setDraggingBlockId(''); return; }
+    const target = blockDropIndex() ?? blocks.length;
+    const srcIdx = blocks.findIndex(x => x.id === id);
+    setDraggingBlockId("");
+    setBlockDropIndex(null);
+    if (srcIdx === -1) return;
+    const insertAt = srcIdx < target ? target - 1 : target;
+    if (insertAt !== srcIdx) {
+      setBlocks(produce(s => { const [m] = s.splice(srcIdx, 1); s.splice(insertAt, 0, m); }));
+      pushSnapshotImmediate();
+    }
+  }
+
+  function onBlockDragEnd() {
+    setDraggingBlockId("");
+    setBlockDropIndex(null);
   }
 
   // ── Panel resizing ───────────────────────────────────────────────────────────
@@ -499,30 +589,41 @@ export default function Home() {
               + New
             </button>
           </div>
-          <div class="overflow-auto flex-1 p-2.5">
+          <div ref={blockListRef} onDragOver={onBlockListDragOver} onDrop={onBlockListDrop} onDragLeave={() => setBlockDropIndex(null)} class="overflow-auto flex-1 p-2.5">
             <Show when={blocks.length === 0}>
               <div class="text-center py-8 px-2 text-[#334155] text-[12px]">
                 No snippets — click <strong class="text-[#3b82f6]">+ New</strong> to create one.
               </div>
             </Show>
+            <Show when={blockDropIndex() === 0}><div class="h-0.5 bg-[#3b82f6] rounded my-0.5" /></Show>
             <For each={blocks}>
-              {(b) => {
+              {(b, i) => {
                 const vars = () => parseVarNames(b.content);
                 return (
-                  <div
-                    draggable
-                    onDragStart={(e) => onSnippetDragStart(e, b)}
+                  <>
+                  <div data-block-wrap
                     class="mb-2 rounded-lg border border-[#1e3a5f] bg-[#1e293b] cursor-grab"
+                    style={{ opacity: draggingBlockId() === b.id ? "0.4" : "1" }}
                   >
                     <div class="pt-2.5 px-2.5 pb-1.5">
-                      <input
-                        value={b.title}
-                        onInput={(e) =>
-                          updateBlock(b.id, { title: (e.target as HTMLInputElement).value })
-                        }
-                        class="w-full px-2 py-1 mb-1.5 border border-[#334155] rounded bg-[#0f172a] text-[#e2e8f0] text-[13px] font-semibold outline-none box-border"
-                        placeholder="Snippet title"
-                      />
+                      <div class="flex items-center gap-2">
+                        <span
+                          onPointerDown={(e) => startBlockDrag(e as PointerEvent, b.id)}
+                          class="text-[#334155] cursor-grab select-none shrink-0 leading-none touch-none hover:text-[#64748b]"
+                          title="Drag to reorder"
+                        >
+                          ⠿
+                        </span>
+                        <input
+                          value={b.title}
+                          onInput={(e) =>
+                            updateBlock(b.id, { title: (e.target as HTMLInputElement).value })
+                          }
+                          ref={(el) => (blockTitleRefs[b.id] = el)}
+                          class="flex-1 px-2 py-1 mb-1.5 border border-[#334155] rounded bg-[#0f172a] text-[#e2e8f0] text-[13px] font-semibold outline-none box-border"
+                          placeholder="Snippet title"
+                        />
+                      </div>
                       <textarea
                         value={b.content}
                         onInput={(e) =>
@@ -562,6 +663,8 @@ export default function Home() {
                       </button>
                     </div>
                   </div>
+                <Show when={blockDropIndex() === i() + 1}><div class="h-0.5 bg-[#3b82f6] rounded my-0.5" /></Show>
+                </>
                 );
               }}
             </For>
@@ -580,11 +683,6 @@ export default function Home() {
           aria-label="Editor"
           style={{ width: `${sizes().middle}%` }}
           class="flex flex-col bg-[#0f172a] overflow-hidden"
-          onDrop={handleEditorDrop}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDropIndex(nodes.length);
-          }}
         >
           <div class="px-3.5 py-2.5 border-b border-[#1e293b] flex items-center justify-between shrink-0">
             <span class="text-[11px] font-semibold text-[#64748b] uppercase tracking-widest">
@@ -613,8 +711,8 @@ export default function Home() {
             <Show when={nodes.length === 0}>
               <div class="border-2 border-dashed border-[#1e293b] rounded-xl p-12 text-center text-[#334155] text-[13px]">
                 <div class="text-[28px] mb-2 opacity-35">✎</div>
-                Drag snippets here or click <strong class="text-[#3b82f6]">+ Text</strong> to start
-                writing
+                Click <strong class="text-[#3b82f6]">+ Text</strong> or use a snippet's
+                <strong class="text-[#3b82f6]"> Insert</strong> button to add content to the editor
               </div>
             </Show>
 
