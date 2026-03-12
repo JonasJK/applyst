@@ -2,25 +2,23 @@
   "name": "cover-letter-builder",
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
+    "dev": "vite",
     "build": "vite build",
-    "start": "vite start",
     "preview": "vite preview"
   },
   "dependencies": {
     "@myriaddreamin/typst-ts-renderer": "0.7.0-rc2",
     "@myriaddreamin/typst-ts-web-compiler": "0.7.0-rc2",
     "@myriaddreamin/typst.ts": "0.7.0-rc2",
-    "@solidjs/router": "^0.15.4",
-    "@solidjs/start": "2.0.0-alpha.2",
-    "@solidjs/vite-plugin-nitro-2": "^0.1.0",
     "@unocss/preset-wind4": "^66.6.6",
     "@unocss/reset": "^66.6.6",
-    "nitro": "3.0.260311-beta",
     "solid-js": "^1.9.11",
     "unocss": "^66.6.6",
     "uuid": "^13.0.0",
     "vite": "^7.3.1"
+  },
+  "devDependencies": {
+    "vite-plugin-solid": "^2.11.6"
   },
   "engines": {
     "node": ">=24"

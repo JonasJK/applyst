@@ -1,4 +1,4 @@
-/// <reference types="@solidjs/start/env" />
+/// <reference types="vite/client" />
 
 declare module "*.wasm?url" {
   const url: string;
