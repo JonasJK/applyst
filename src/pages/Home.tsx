@@ -190,7 +190,7 @@ export default function Home() {
         // Load the new URL into the inactive slot
         setSlotUrls((prev) => {
           const next: [string, string] = [prev[0], prev[1]];
-          next[activeSlot() === 0 ? 1 : 0] = currentBlobUrl + "#toolbar=0";
+          next[activeSlot() === 0 ? 1 : 0] = currentBlobUrl;
           return next;
         });
       } catch (err) {
@@ -558,7 +558,7 @@ export default function Home() {
 
             <For each={nodes}>
               {(node, i) => (
-                <div data-node-wrap class="mb-1">
+                <div data-node-wrap class="mb-2">
                   {/* The node card */}
                   <div
                     class="rounded-lg border border-[#1e293b] bg-[#1a2332] overflow-hidden transition-opacity duration-150"
@@ -706,6 +706,7 @@ export default function Home() {
                 width: "100%",
                 height: "100%",
                 border: "none",
+                "pointer-events": activeSlot() === 0 ? "auto" : "none",
               }}
               title="PDF Preview A"
             />
@@ -722,6 +723,7 @@ export default function Home() {
                 width: "100%",
                 height: "100%",
                 border: "none",
+                "pointer-events": activeSlot() === 1 ? "auto" : "none",
               }}
               title="PDF Preview B"
             />
