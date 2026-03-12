@@ -5,6 +5,7 @@ import { setImportWasmModule as setCompilerImporter } from "@myriaddreamin/typst
 import { $typst } from "@myriaddreamin/typst.ts";
 
 import { v7 as uuid } from "uuid";
+import { exportJSON, importJSON } from "../utils/importExport";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 /** A snippet definition stored in the left panel */
@@ -123,7 +124,9 @@ export default function Home() {
   }
 
   function redo() {
-    if (historyIndex() < history().length - 1) restoreSnapshotAt(historyIndex() + 1);
+    if (historyIndex() < history().length - 1) {
+      restoreSnapshotAt(historyIndex() + 1);
+    }
   }
 
   // ── LocalStorage ────────────────────────────────────────────────────────────
@@ -132,8 +135,6 @@ export default function Home() {
       const b = localStorage.getItem(LS_KEYS.blocks);
       if (b) {
         const parsed = JSON.parse(b) as Block[];
-        // Sort by UUIDv7 lexicographic order (oldest first). If items came from older
-        // versions they may already be in desired order; fallback to string compare.
         parsed.sort((x, y) => x.id.localeCompare(y.id));
         setBlocks(parsed as any);
       }
@@ -269,25 +270,27 @@ export default function Home() {
 
   function updateTextNode(id: string, content: string) {
     const idx = nodes.findIndex((n) => n.id === id);
-    if (idx >= 0)
+    if (idx >= 0) {
       setNodes(
         produce((s) => {
           const n = s[idx];
           if (n.type === "text") n.content = content;
         }),
       );
+    }
     pushSnapshotDebounced();
   }
 
   function updateSnippetVar(nodeId: string, varName: string, value: string) {
     const idx = nodes.findIndex((n) => n.id === nodeId);
-    if (idx >= 0)
+    if (idx >= 0) {
       setNodes(
         produce((s) => {
           const n = s[idx];
           if (n.type === "snippet") n.vars[varName] = value;
         }),
       );
+    }
     pushSnapshotDebounced();
   }
 
@@ -405,7 +408,7 @@ export default function Home() {
 
     const getInsertIdx = (clientY: number) => {
       if (!blockListRef) return blocks.length;
-      const wraps = blockListRef.querySelectorAll<HTMLElement>('[data-block-wrap]');
+      const wraps = blockListRef.querySelectorAll<HTMLElement>("[data-block-wrap]");
       for (let i = 0; i < wraps.length; i++) {
         const r = wraps[i].getBoundingClientRect();
         if (clientY < r.top + r.height / 2) return i;
@@ -418,11 +421,11 @@ export default function Home() {
     const onMove = (ev: PointerEvent) => setBlockDropIndex(getInsertIdx(ev.clientY));
 
     const onUp = () => {
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
       const id = blockId;
       const target = blockDropIndex();
-      setDraggingBlockId('');
+      setDraggingBlockId("");
       setBlockDropIndex(null);
       const srcIdx = blocks.findIndex((b) => b.id === id);
       if (srcIdx === -1 || target === null) return;
@@ -438,8 +441,8 @@ export default function Home() {
       }
     };
 
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
   }
 
   function handleEditorDrop(e: DragEvent) {
@@ -455,29 +458,51 @@ export default function Home() {
   function onBlockListDragOver(e: DragEvent) {
     e.preventDefault();
     if (!blockListRef) return;
-    const wraps = blockListRef.querySelectorAll<HTMLElement>('[data-block-wrap]');
+    const wraps = blockListRef.querySelectorAll<HTMLElement>("[data-block-wrap]");
     let idx = wraps.length;
     for (let i = 0; i < wraps.length; i++) {
       const r = wraps[i].getBoundingClientRect();
-      if (e.clientY < r.top + r.height / 2) { idx = i; break; }
+      if (e.clientY < r.top + r.height / 2) {
+        idx = i;
+        break;
+      }
     }
     setBlockDropIndex(idx);
   }
 
   function onBlockListDrop(e: DragEvent) {
     e.preventDefault();
-    const raw = e.dataTransfer?.getData('application/typst');
+    const raw = e.dataTransfer?.getData("application/typst");
     // prefer using our local draggingBlockId if present
-    const id = draggingBlockId() || (raw ? (() => { try { return JSON.parse(raw).id as string } catch { return undefined } })() : undefined);
-    if (!id) { setBlockDropIndex(null); setDraggingBlockId(''); return; }
+    const id =
+      draggingBlockId() ||
+      (raw
+        ? (() => {
+            try {
+              return JSON.parse(raw).id as string;
+            } catch {
+              return undefined;
+            }
+          })()
+        : undefined);
+    if (!id) {
+      setBlockDropIndex(null);
+      setDraggingBlockId("");
+      return;
+    }
     const target = blockDropIndex() ?? blocks.length;
-    const srcIdx = blocks.findIndex(x => x.id === id);
+    const srcIdx = blocks.findIndex((x) => x.id === id);
     setDraggingBlockId("");
     setBlockDropIndex(null);
     if (srcIdx === -1) return;
     const insertAt = srcIdx < target ? target - 1 : target;
     if (insertAt !== srcIdx) {
-      setBlocks(produce(s => { const [m] = s.splice(srcIdx, 1); s.splice(insertAt, 0, m); }));
+      setBlocks(
+        produce((s) => {
+          const [m] = s.splice(srcIdx, 1);
+          s.splice(insertAt, 0, m);
+        }),
+      );
       pushSnapshotImmediate();
     }
   }
@@ -527,11 +552,50 @@ export default function Home() {
 
   // ── Styles ───────────────────────────────────────────────────────────────────
 
+  // --- Import / Export handlers
+  let fileInputRef: HTMLInputElement | undefined;
+
+  async function handleImportFile(file: File) {
+    try {
+      const data = await importJSON(file);
+      if (!data) throw new Error("No data in file");
+      if (Array.isArray(data.blocks)) setBlocks(data.blocks as any);
+      if (Array.isArray(data.nodes)) setNodes(data.nodes as any);
+      if (data.sizes) setSizes(data.sizes as any);
+      pushSnapshotImmediate();
+    } catch (err: any) {
+      console.error("Import failed:", err);
+      try {
+        alert("Import failed: " + (err?.message ?? String(err)));
+      } catch {}
+    }
+  }
+
+  function triggerImport() {
+    fileInputRef?.click();
+  }
+
+  function handleExport() {
+    const payload = {
+      blocks: JSON.parse(JSON.stringify(blocks)),
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      sizes: structuredClone(sizes()),
+    };
+    exportJSON("applyst-export.json", payload);
+  }
+
   return (
     <div ref={rootEl} class="font-sans h-screen flex flex-col overflow-hidden bg-[#0f172a]">
       {/* Transparent overlay to capture mouse events over iframes during panel drag */}
       <Show when={isDraggingPanel()}>
-        <div style={{ position: "fixed", inset: "0", "z-index": "9999", cursor: "col-resize" }} />
+        <div
+          style={{
+            position: "fixed",
+            inset: "0",
+            "z-index": "9999",
+            cursor: "col-resize",
+          }}
+        />
       </Show>
       {/* ── Header ── */}
       <header class="h-12 bg-[#1e293b] border-b border-[#334155] flex items-center px-5 gap-2.5 shrink-0">
@@ -544,11 +608,35 @@ export default function Home() {
             stroke-linecap="round"
           />
         </svg>
-        <span class="text-[15px] font-bold text-[#f1f5f9] tracking-tight">
-          Cover Letter Builder
-        </span>
-        <span class="text-[11px] text-[#475569] ml-0.5">· Typst</span>
+        <span class="text-[15px] font-bold text-[#f1f5f9] tracking-tight">Applyst</span>
+        <span class="text-[11px] text-[#475569] ml-0.5">· runs on Typst</span>
         <div class="ml-auto flex items-center gap-2">
+          <button
+            onClick={triggerImport}
+            class="px-2 py-1 rounded-md bg-transparent text-[#94a3b8] border border-[#33415533] text-[12px] cursor-pointer hover:bg-[#33415510] disabled:opacity-40 flex items-center gap-2"
+            title="Import JSON"
+          >
+            <i class="i-mdi:import text-[16px]" aria-hidden="true" />
+          </button>
+          <button
+            onClick={handleExport}
+            class="px-2 py-1 rounded-md bg-transparent text-[#94a3b8] border border-[#33415533] text-[12px] cursor-pointer hover:bg-[#33415510] disabled:opacity-40 flex items-center gap-2"
+            title="Export JSON"
+          >
+            <i class="i-mdi:export text-[16px]" aria-hidden="true" />
+          </button>
+          {/* hidden file input for import */}
+          <input
+            ref={(el) => (fileInputRef = el)}
+            type="file"
+            accept="application/json"
+            onChange={(e) => {
+              const f = (e.target as HTMLInputElement).files?.[0];
+              if (f) handleImportFile(f);
+              (e.target as HTMLInputElement).value = "";
+            }}
+            style={{ display: "none" }}
+          />
           <button
             onClick={undo}
             disabled={historyIndex() <= 0}
@@ -557,6 +645,7 @@ export default function Home() {
           >
             <i class="i-mdi:undo text-[16px]" aria-hidden="true" />
           </button>
+
           <button
             onClick={redo}
             disabled={historyIndex() >= history().length - 1}
@@ -589,82 +678,99 @@ export default function Home() {
               + New
             </button>
           </div>
-          <div ref={blockListRef} onDragOver={onBlockListDragOver} onDrop={onBlockListDrop} onDragLeave={() => setBlockDropIndex(null)} class="overflow-auto flex-1 p-2.5">
+          <div
+            ref={blockListRef}
+            onDragOver={onBlockListDragOver}
+            onDrop={onBlockListDrop}
+            onDragLeave={() => setBlockDropIndex(null)}
+            class="overflow-auto flex-1 p-2.5"
+          >
             <Show when={blocks.length === 0}>
               <div class="text-center py-8 px-2 text-[#334155] text-[12px]">
                 No snippets — click <strong class="text-[#3b82f6]">+ New</strong> to create one.
               </div>
             </Show>
-            <Show when={blockDropIndex() === 0}><div class="h-0.5 bg-[#3b82f6] rounded my-0.5" /></Show>
+            <Show when={blockDropIndex() === 0}>
+              <div class="h-0.5 bg-[#3b82f6] rounded my-0.5" />
+            </Show>
             <For each={blocks}>
               {(b, i) => {
                 const vars = () => parseVarNames(b.content);
                 return (
                   <>
-                  <div data-block-wrap
-                    class="mb-2 rounded-lg border border-[#1e3a5f] bg-[#1e293b] cursor-grab"
-                    style={{ opacity: draggingBlockId() === b.id ? "0.4" : "1" }}
-                  >
-                    <div class="pt-2.5 px-2.5 pb-1.5">
-                      <div class="flex items-center gap-2">
-                        <span
-                          onPointerDown={(e) => startBlockDrag(e as PointerEvent, b.id)}
-                          class="text-[#334155] cursor-grab select-none shrink-0 leading-none touch-none hover:text-[#64748b]"
-                          title="Drag to reorder"
-                        >
-                          ⠿
-                        </span>
-                        <input
-                          value={b.title}
+                    <div
+                      data-block-wrap
+                      class="mb-2 rounded-lg border border-[#1e3a5f] bg-[#1e293b] cursor-grab"
+                      style={{
+                        opacity: draggingBlockId() === b.id ? "0.4" : "1",
+                      }}
+                    >
+                      <div class="pt-2.5 px-2.5 pb-1.5">
+                        <div class="flex items-center gap-2">
+                          <span
+                            onPointerDown={(e) => startBlockDrag(e as PointerEvent, b.id)}
+                            class="text-[#334155] cursor-grab select-none shrink-0 leading-none touch-none hover:text-[#64748b]"
+                            title="Drag to reorder"
+                          >
+                            ⠿
+                          </span>
+                          <input
+                            value={b.title}
+                            onInput={(e) =>
+                              updateBlock(b.id, {
+                                title: (e.target as HTMLInputElement).value,
+                              })
+                            }
+                            ref={(el) => (blockTitleRefs[b.id] = el)}
+                            class="flex-1 px-2 py-1 mb-1.5 border border-[#334155] rounded bg-[#0f172a] text-[#e2e8f0] text-[13px] font-semibold outline-none box-border"
+                            placeholder="Snippet title"
+                          />
+                        </div>
+                        <textarea
+                          value={b.content}
                           onInput={(e) =>
-                            updateBlock(b.id, { title: (e.target as HTMLInputElement).value })
+                            updateBlock(b.id, {
+                              content: (e.target as HTMLTextAreaElement).value,
+                            })
                           }
-                          ref={(el) => (blockTitleRefs[b.id] = el)}
-                          class="flex-1 px-2 py-1 mb-1.5 border border-[#334155] rounded bg-[#0f172a] text-[#e2e8f0] text-[13px] font-semibold outline-none box-border"
-                          placeholder="Snippet title"
+                          rows={4}
+                          class="w-full px-2 py-1 border border-[#334155] rounded bg-[#0f172a] text-[#94a3b8] text-[12px] font-mono resize-y outline-none box-border"
+                          placeholder={"Typst content…\nUse {{varName}} for variables"}
                         />
                       </div>
-                      <textarea
-                        value={b.content}
-                        onInput={(e) =>
-                          updateBlock(b.id, { content: (e.target as HTMLTextAreaElement).value })
-                        }
-                        rows={4}
-                        class="w-full px-2 py-1 border border-[#334155] rounded bg-[#0f172a] text-[#94a3b8] text-[12px] font-mono resize-y outline-none box-border"
-                        placeholder={"Typst content…\nUse {{varName}} for variables"}
-                      />
-                    </div>
-                    <Show when={vars().length > 0}>
-                      <div class="px-2.5 pb-1.5 flex flex-wrap gap-1">
-                        <For each={vars()}>
-                          {(v) => (
-                            <span class="text-[10px] bg-[#0f172a] text-[#60a5fa] border border-[#1e3a5f] rounded px-1.5 py-px">
-                              {`{{${v}}}`}
-                            </span>
-                          )}
-                        </For>
+                      <Show when={vars().length > 0}>
+                        <div class="px-2.5 pb-1.5 flex flex-wrap gap-1">
+                          <For each={vars()}>
+                            {(v) => (
+                              <span class="text-[10px] bg-[#0f172a] text-[#60a5fa] border border-[#1e3a5f] rounded px-1.5 py-px">
+                                {`{{${v}}}`}
+                              </span>
+                            )}
+                          </For>
+                        </div>
+                      </Show>
+                      <div class="px-2.5 pt-1.5 pb-2 flex gap-1.5 justify-end border-t border-[#0f172a]">
+                        <button
+                          onClick={() => {
+                            setNodes(produce((s) => s.push(blockToNode(b))));
+                            pushSnapshotImmediate();
+                          }}
+                          class="px-2 py-0.5 rounded bg-transparent text-[#34d399] border border-[#34d39940] text-[11px] cursor-pointer hover:bg-[#34d39910]"
+                        >
+                          Insert
+                        </button>
+                        <button
+                          onClick={() => removeBlock(b.id)}
+                          class="px-2 py-0.5 rounded bg-transparent text-[#f87171] border border-[#f8717140] text-[11px] cursor-pointer hover:bg-[#f8717110]"
+                        >
+                          Delete
+                        </button>
                       </div>
-                    </Show>
-                    <div class="px-2.5 pt-1.5 pb-2 flex gap-1.5 justify-end border-t border-[#0f172a]">
-                      <button
-                        onClick={() => {
-                          setNodes(produce((s) => s.push(blockToNode(b))));
-                          pushSnapshotImmediate();
-                        }}
-                        class="px-2 py-0.5 rounded bg-transparent text-[#34d399] border border-[#34d39940] text-[11px] cursor-pointer hover:bg-[#34d39910]"
-                      >
-                        Insert
-                      </button>
-                      <button
-                        onClick={() => removeBlock(b.id)}
-                        class="px-2 py-0.5 rounded bg-transparent text-[#f87171] border border-[#f8717140] text-[11px] cursor-pointer hover:bg-[#f8717110]"
-                      >
-                        Delete
-                      </button>
                     </div>
-                  </div>
-                <Show when={blockDropIndex() === i() + 1}><div class="h-0.5 bg-[#3b82f6] rounded my-0.5" /></Show>
-                </>
+                    <Show when={blockDropIndex() === i() + 1}>
+                      <div class="h-0.5 bg-[#3b82f6] rounded my-0.5" />
+                    </Show>
+                  </>
                 );
               }}
             </For>
@@ -712,7 +818,7 @@ export default function Home() {
               <div class="border-2 border-dashed border-[#1e293b] rounded-xl p-12 text-center text-[#334155] text-[13px]">
                 <div class="text-[28px] mb-2 opacity-35">✎</div>
                 Click <strong class="text-[#3b82f6]">+ Text</strong> or use a snippet's
-                <strong class="text-[#3b82f6]"> Insert</strong> button to add content to the editor
+                <strong class="text-[#3b82f6]">Insert</strong> button to add content to the editor
               </div>
             </Show>
 
@@ -727,7 +833,9 @@ export default function Home() {
                   {/* The node card */}
                   <div
                     class="rounded-lg border border-[#1e293b] bg-[#1a2332] overflow-hidden transition-opacity duration-150"
-                    style={{ opacity: draggingNodeId() === node.id ? "0.4" : "1" }}
+                    style={{
+                      opacity: draggingNodeId() === node.id ? "0.4" : "1",
+                    }}
                   >
                     {/* Node header row */}
                     <div class="flex items-center gap-1.5 px-2 py-1.5 border-b border-[#0f172a]">
@@ -739,7 +847,9 @@ export default function Home() {
                         ⠿
                       </span>
                       <span
-                        class={`text-[10px] font-bold tracking-widest uppercase flex-1 ${node.type === "snippet" ? "text-[#60a5fa]" : "text-[#94a3b8]"}`}
+                        class={`text-[10px] font-bold tracking-widest uppercase flex-1 ${
+                          node.type === "snippet" ? "text-[#60a5fa]" : "text-[#94a3b8]"
+                        }`}
                       >
                         {node.type === "snippet" ? node.title : "Text"}
                       </span>
